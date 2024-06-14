@@ -11,6 +11,7 @@ import uuid, boto3, base64, os
 from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 from dotenv import load_dotenv
 import imageio
+from moviepy.editor import VideoFileClip
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -676,11 +677,16 @@ def get_unique_video_id(prefix, table):
 
 # TO GENERATE THUMBNAIL FROM VIDEO
 def generate_video_thumbnail(video_path, thumbnail_path):
-    reader = imageio.get_reader(video_path, 'ffmpeg')
-    # Extract the first frame (or any specific frame)
-    image = reader.get_data(0)
-    imageio.imwrite(thumbnail_path, image)
-
+    try:
+        clip = VideoFileClip(video_path)
+        frame = clip.get_frame(0)  # Extracting the first frame
+        frame.save(thumbnail_path)
+        print(f"Thumbnail generated at {thumbnail_path}")
+        clip.close()
+    except Exception as e:
+        print(f"Error generating thumbnail: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error generating thumbnail: {e}")
+    
 @app.post("/upload_reel")
 async def uploadReel(request_body: dict = Body(...,
     example={
@@ -741,7 +747,12 @@ async def uploadReel(request_body: dict = Body(...,
                 
                 # print(f"video_filename=>{video_bytes}")
                 video_filename = f"{userId}_{currentTimeStamp}.mp4"
+                temp_video_path = f"/tmp/{video_filename}"
                 
+                 # Save video bytes to a temporary file
+                with open(temp_video_path, 'wb') as temp_video_file:
+                    temp_video_file.write(video_bytes)
+                    
                 try:
                     # Upload video to S3 bucket
                     response = s3.Bucket(S3_BUCKET_NAME).put_object(Key=video_filename, Body=video_bytes, ContentType='video/mp4', ACL='public-read')
